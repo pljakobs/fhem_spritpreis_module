@@ -1,6 +1,10 @@
 ##############################################
 # $Id: 72_Spritpreis.pm 0 2017-01-10 12:00:00Z pjakobs $
 
+# v0.0: inital testing
+#
+
+
 package main;
  
 use strict;
@@ -10,6 +14,7 @@ use Time::HiRes;
 use Time::HiRes qw(usleep nanosleep);
 use Time::HiRes qw(time);
 use JSON::XS;
+use URI::URL;
 use Data::Dumper;
 require "HttpUtils.pm";
 
@@ -34,7 +39,7 @@ Spritpreis_Initialize(@) {
     $hash->{AttrFn}         = 'Spritpreis_Attr';
     $hash->{NotifyFn}       = 'Spritpreis_Notify';
     $hash->{ReadFn}         = 'Spritpreis_Read';
-    $hash->{AttrList}       = "lat lon rad type sortby apikey"." $readingFnAttributes";
+    $hash->{AttrList}       = "lat lon rad type sortby apikey interval address"." $readingFnAttributes";
     return undef;
 }
 
@@ -45,7 +50,7 @@ Spritpreis_Define($$) {
     my @parts=split("[ \t][ \t]*", $def);
     my $name=$parts[0];
     Spritpreis_Tankerkoenig_GetPricesForLocation($hash);
-    InternalTimer(gettimeofday()+30, Spritpreis_Tankerkoenig_GetPricesForLocation($hash),$hash);
+    InternalTimer(gettimeofday()+AttrVal($hash->{NAME}, "interval",15)*60, "Spritpreis_Tankerkoenig_GetPricesForLocation",$hash);
     return undef;
 }
 
@@ -63,6 +68,7 @@ sub
 Spritpreis_Get(@) {
     my ($hash, $name, $cmd, @args) = @_;
     Spritpreis_Tankerkoenig_GetPricesForLocation($hash);
+    Spritpreis_GetCoordinatesForAddress($hash,"Ratzeburg, Strängnäsweg 20");
     # add price trigger here
     return undef;
 }
@@ -127,34 +133,35 @@ Spritpreis_Tankerkoenig_GetPricesForIDs(@){
 
 sub
 Spritpreis_Tankerkoenig_GetPricesForLocation(@){
-    my ($hash) = @_;
+   my ($hash) = @_;
 
-    my $lat=AttrVal($hash->{'NAME'}, "lat",0);
-    my $lng=AttrVal($hash->{'NAME'}, "lon",0);
-    my $rad=AttrVal($hash->{'NAME'}, "rad",5);
-    my $type=AttrVal($hash->{'NAME'}, "type","diesel");
-    my $sort=AttrVal($hash->{'NAME'}, "sortby","price");
-    my $apikey=AttrVal($hash->{'NAME'}, "apikey","");
+   my $lat=AttrVal($hash->{'NAME'}, "lat",0);
+   my $lng=AttrVal($hash->{'NAME'}, "lon",0);
+   my $rad=AttrVal($hash->{'NAME'}, "rad",5);
+   my $type=AttrVal($hash->{'NAME'}, "type","diesel");
+   my $sort=AttrVal($hash->{'NAME'}, "sortby","price");
+   my $apikey=AttrVal($hash->{'NAME'}, "apikey","");
 
-    if($apikey eq "") {
-        Log3($hash,3,"$hash->{'NAME'}: please provide a valid apikey, you can get it from https://creativecommons.tankerkoenig.de/#register. This function can't work without it"); 
-        return "err no APIKEY";
-    }
-    my $url="https://creativecommons.tankerkoenig.de/json/list.php?lat=$lat&lng=$lng&rad=$rad&type=$type&sort=$sort&apikey=$apikey"; 
+   if($apikey eq "") {
+       Log3($hash,3,"$hash->{'NAME'}: please provide a valid apikey, you can get it from https://creativecommons.tankerkoenig.de/#register. This function can't work without it"); 
+       return "err no APIKEY";
+   }
+   my $url="https://creativecommons.tankerkoenig.de/json/list.php?lat=$lat&lng=$lng&rad=$rad&type=$type&sort=$sort&apikey=$apikey"; 
 
-    Log3($hash, 4,"$hash->{NAME}: sending request with url $url");
-    
-    my $param= {
-        url      => $url,
-        hash     => $hash,
-        timeout  => 30,
-        method   => "GET",
-        header   => "User-Agent: fhem\r\nAccept: application/json",
-        parser   => \&Spritpreis_ParsePricesForLocation,
-        callback => \&Spritpreis_callback
-     };
-     HttpUtils_NonblockingGet($param);
-     return undef;
+   Log3($hash, 4,"$hash->{NAME}: sending request with url $url");
+   
+   my $param= {
+       url      => $url,
+       hash     => $hash,
+       timeout  => 30,
+       method   => "GET",
+       header   => "User-Agent: fhem\r\nAccept: application/json",
+       parser   => \&Spritpreis_ParsePricesForLocation,
+       callback => \&Spritpreis_callback
+    };
+    HttpUtils_NonblockingGet($param);
+    InternalTimer(gettimeofday()+AttrVal($hash->{NAME}, "interval",15)*60, "Spritpreis_Tankerkoenig_GetPricesForLocation",$hash);
+    return undef;
 }
 
 #####################################
@@ -244,7 +251,66 @@ Spritpreis_ParsePricesForLocation(@){
 sub
 Spritpreis_ParsePricesForIDs(@){
 }
+#####################################
+#
+# geolocation functions
+#
+#####################################
 
+sub
+Spritpreis_GetCoordinatesForAddress(@){
+    my ($hash, $address)=@_;
+    
+    my $url=new URI::URL 'https://maps.google.com/maps/api/geocode/json';
+    $url->query_form("address",$address);
+    Log3($hash, 3, "$hash->{NAME}: request URL: ".$url);
+
+    my $param= {
+    url      => $url,
+    hash     => $hash,
+    timeout  => 30,
+    method   => "GET",
+    header   => "User-Agent: fhem\r\nAccept: application/json",
+    parser   => \&Spritpreis_ParseCoordinatesForAddress,
+    callback => \&Spritpreis_callback
+    };
+    HttpUtils_NonblockingGet($param);
+    return undef;
+}
+
+sub
+Spritpreis_ParseCoordinatesForAddress(@){
+    my ($hash, $err, $data)=@_;
+    my $result;
+
+    Log3($hash,5,"$hash->{NAME}: ParseCoordinatesForAddress has been called with err $err and data $data");
+
+    if($err){
+        Log3($hash, 4, "$hash->{NAME}: error fetching nformation");
+    } elsif($data){
+        Log3($hash, 4, "$hash->{NAME}: got CoordinatesForAddress reply");
+        Log3($hash, 5, "$hash->{NAME}: got data $data\n\n\n");
+
+        eval {
+            $result = JSON->new->utf8(1)->decode($data);
+        };
+        if ($@) {
+            Log3 ($hash, 4, "$hash->{NAME}: error decoding response $@");
+        } else {
+            my $lat=$result->{results}->[0]->{geometry}->{location}->{lat};
+            my $lon=$result->{results}->[0]->{geometry}->{location}->{lng};
+
+            Log3($hash,3,"$hash->{NAME}: got coordinates for address as lat: $lat, lon: $lon");
+            # readingsBeginUpdate($hash);
+            
+            # readingsEndUpdate($hash,1);
+        }         
+    }else {
+        Log3 ($hash, 4, "$hash->{NAME}: something is very odd");
+    }
+    return $data; 
+}
+       
 #####################################
 #
 # helper functions
