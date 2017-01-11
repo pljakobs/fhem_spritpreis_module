@@ -68,7 +68,7 @@ sub
 Spritpreis_Get(@) {
     my ($hash, $name, $cmd, @args) = @_;
     Spritpreis_Tankerkoenig_GetPricesForLocation($hash);
-    Spritpreis_GetCoordinatesForAddress($hash,"Ratzeburg, Strängnäsweg 20");
+    Spritpreis_GetCoordinatesForAddress($hash,"Hamburg, Elbphilharmonie");
     # add price trigger here
     return undef;
 }
