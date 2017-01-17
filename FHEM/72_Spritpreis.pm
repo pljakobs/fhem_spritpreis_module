@@ -40,17 +40,53 @@ Spritpreis_Initialize(@) {
     $hash->{NotifyFn}       = 'Spritpreis_Notify';
     $hash->{ReadFn}         = 'Spritpreis_Read';
     $hash->{AttrList}       = "lat lon rad type sortby apikey interval address"." $readingFnAttributes";
+    $hash->{AttrList}       = "IDs type interval"." $readingFnAttributes";
     return undef;
 }
 
 sub
 Spritpreis_Define($$) {
 
+    my $apiKey;
     my ($hash, $def)=@_;
     my @parts=split("[ \t][ \t]*", $def);
     my $name=$parts[0];
-    # Spritpreis_Tankerkoenig_GetPricesForLocation($hash);
-    # InternalTimer(gettimeofday()+AttrVal($hash->{NAME}, "interval",15)*60, "Spritpreis_Tankerkoenig_GetPricesForLocation",$hash);
+    if(defined $parts[2]){
+        $apiKey=$parts[2];
+    }else{
+        Log3 ($hash, 2, "$hash->{NAME} Module $parts[1] requires a valid apikey");
+        return undef;
+    }
+
+    my $result;
+    my $url="https://creativecommons.tankerkoenig.de/json/prices.php?ids=12121212-1212-1212-1212-121212121212&apikey=".$apiKey; 
+    
+    my $param= {
+    url      => $url,
+    timeout  => 1,
+    method   => "GET",
+    header   => "User-Agent: fhem\r\nAccept: application/json",
+    };
+    
+    my ($err, $data)=HttpUtils_BlockingGet($param);
+
+    if ($err){
+        Log3($hash,2,"$hash->{NAME}: Error verifying APIKey: $err");
+        return undef;
+    }else{
+        eval {
+            $result = JSON->new->utf8(1)->decode($data);
+        };
+        if ($@) {
+            Log3 ($hash, 4, "$hash->{NAME}: error decoding response $@");
+        } else {
+            if ($result->{ok} ne "true"){
+                Log3 ($hash, 2, "$hash->{name}: error: $result-{message}");
+                return undef;
+            }
+        }
+        $hash->{helper}->{apiKey}=$apiKey;
+    }
     return undef;
 }
 
@@ -145,11 +181,31 @@ Spritpreis_Tankerkoenig_GetIDsForLocation(@){
 }
 
 sub
-Spritpreis_Tankerkoenig_GetPricesForIDs(@){
+Spritpreis_Tankerkoenig_UpdatePricesForIDs(@){
     my ($hash) = @_;
 
+    my @IDs=split(",", attrVal($hash,"IDs",""));
+    my $i=0;
+    my $j=0;
+    my $IDList;
+    do {
+        $IDList="";
+        do {
+            $IDList=$IDList.",".$IDs[$i];
+        }while($j++ < 10 && defined($IDs[$i++]));
+        Spritpreis_Tankerkoenig_UpdatePricesForIDs($hash, $IDList);
+        Log3($hash, 4,"$hash->{NAME}: IDList=$IDList");
+        $j=0;
+    }while(defined($IDs[$i]));
+    Log3($hash, 4,"$hash->{NAME}: IDList=$IDList");
+    Spritpreis_Tankerkoenig_UpdatePricesForIDs($hash, $IDList) if ($IDList ne "");
     return undef;
 }
+
+sub
+Spritpreis_Tankerkoenig_GetDetailsForIDs(@){
+    my ($hash, $id)=@_;
+
 
 sub
 Spritpreis_GetStationIDsForLocation(@){
@@ -195,15 +251,27 @@ Spritpreis_GetStationIDsForLocation(@){
         if ($@) {
             Log3 ($hash, 4, "$hash->{NAME}: error decoding response $@");
         } else {
+            my @headerHost = grep /Host/, @FW_httpheader;
+            $headerHost[0] =~ s/Host: //g;
+
             my ($stations) = $result->{stations};
-            my $ret="<html><p><h3>Stations for Address</h3></p><p><h2>$formattedAddress</h2></p><form action='fhem/cmd?set ".$hash->{NAME}." station' method='get'><select multiple name='id'>";
+            my $ret="<html><p><h3>Stations for Address</h3></p><p><h2>$formattedAddress</h2></p><table><tr><td>Name</td><td>Ort</td><td>Straße</td></tr>";
             foreach (@{$stations}){
                 (my $station)=$_;
 
                 Log3($hash, 2, "Name: $station->{name}, id: $station->{id}");
-                $ret=$ret."<option value=".$station->{id}.">".$station->{name}." ".$station->{place}." ".$station->{street}." ".$station->{houseNumber}."</option>";
+                $ret=$ret . "<tr><td><a href=http://" . 
+                            $headerHost[0] . 
+                            "/fhem?cmd=set+" . 
+                            $hash->{NAME} . 
+                            "+add+station+" . 
+                            $station->{id} . 
+                            ">";
+                $ret=$ret . $station->{name} . "</td><td>" . $station->{place} . "</td><td>" . $station->{street} . " " . $station->{houseNumber} . "</td></tr>";
+                #$ret=$ret."<option value=".$station->{id}.">".$station->{name}." ".$station->{place}." ".$station->{street}." ".$station->{houseNumber}."</option>";
             }
-            $ret=$ret."<button type='submit'>submit</button></html>";
+            $ret=$ret . "</table>";
+            #$ret=$ret."<button type='submit'>submit</button></form></html>";
             Log3($hash,2,"$hash->{NAME}: ############# ret: $ret");
             return $ret;
         }         
