@@ -39,7 +39,7 @@ Spritpreis_Initialize(@) {
     $hash->{AttrFn}         = 'Spritpreis_Attr';
     $hash->{NotifyFn}       = 'Spritpreis_Notify';
     $hash->{ReadFn}         = 'Spritpreis_Read';
-    $hash->{AttrList}       = "lat lon rad type sortby apikey interval address"." $readingFnAttributes";
+    $hash->{AttrList}       = "lat lon rad type sortby apikey interval address station"." $readingFnAttributes";
     return undef;
 }
 
@@ -196,14 +196,21 @@ Spritpreis_GetStationIDsForLocation(@){
             Log3 ($hash, 4, "$hash->{NAME}: error decoding response $@");
         } else {
             my ($stations) = $result->{stations};
-            my $ret="<html><p><h3>Stations for Address</h3></p><p><h2>$formattedAddress</h2></p><form action='fhem/cmd?set ".$hash->{NAME}." station' method='get'><select multiple name='id'>";
+			my @headerHost = grep /Host/, @FW_httpheader;
+            $headerHost[0] =~ s/Host: //g; 
+			my $hashname = $hash->{NAME};
+            my $ret="<html><table><tr><td colspan=2><h3>Stations for Address</h3></p><p><h2>$formattedAddress</h2></p></td></tr>";
             foreach (@{$stations}){
                 (my $station)=$_;
 
                 Log3($hash, 2, "Name: $station->{name}, id: $station->{id}");
-                $ret=$ret."<option value=".$station->{id}.">".$station->{name}." ".$station->{place}." ".$station->{street}." ".$station->{houseNumber}."</option>";
+				
+				$ret.= "<tr><td>".$station->{name}." ".$station->{place}." ".$station->{street}." ".$station->{houseNumber}."</td>";
+                $ret.= "<td><a href='#' onclick=\$.get(\"http://".$headerHost[0]."/fhem?cmd=";
+				$ret.= "{my%20\$tmp=(AttrVal('".$hash->{NAME}."','station','')eq'')?'':AttrVal('".$hash->{NAME}."','station','').',';;fhem('attr%20".$hashname."%20station%20'.\$tmp.'".$station->{id}."');;}";
+				$ret.= "\");\$(this).html('added');\$(this).removeAttr('onclick')>add</a></td></tr>";
             }
-            $ret=$ret."<button type='submit'>submit</button></html>";
+            $ret=$ret."</table></html>";
             Log3($hash,2,"$hash->{NAME}: ############# ret: $ret");
             return $ret;
         }         
@@ -291,7 +298,7 @@ Spritpreis_ParseStationIDsForLocation(@){
                 # readingsBulkUpdate($hash,$number."_isOpen",$station->{isOpen});
             }
             # readingsEndUpdate($hash,1);
-            $ret=$ret."<button type='submit'>submit</button></html>";
+            $ret=$ret."<input type='submit'></form></html>";
             Log3($hash,2,"$hash->{NAME}: ############# ret: $ret");
             return $ret;
         }         
