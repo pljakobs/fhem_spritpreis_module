@@ -39,18 +39,60 @@ Spritpreis_Initialize(@) {
     $hash->{AttrFn}         = 'Spritpreis_Attr';
     $hash->{NotifyFn}       = 'Spritpreis_Notify';
     $hash->{ReadFn}         = 'Spritpreis_Read';
-    $hash->{AttrList}       = "lat lon rad type sortby apikey interval address station"." $readingFnAttributes";
+    $hash->{AttrList}       = "lat lon rad IDs type sortby apikey interval address"." $readingFnAttributes";
+    #$hash->{AttrList}       = "IDs type interval"." $readingFnAttributes";
     return undef;
 }
 
 sub
 Spritpreis_Define($$) {
 
+    my $apiKey;
     my ($hash, $def)=@_;
     my @parts=split("[ \t][ \t]*", $def);
     my $name=$parts[0];
-    # Spritpreis_Tankerkoenig_GetPricesForLocation($hash);
-    # InternalTimer(gettimeofday()+AttrVal($hash->{NAME}, "interval",15)*60, "Spritpreis_Tankerkoenig_GetPricesForLocation",$hash);
+    if(defined $parts[2]){
+        $apiKey=$parts[2];
+    }else{
+        Log3 ($hash, 2, "$hash->{NAME} Module $parts[1] requires a valid apikey");
+        return undef;
+    }
+
+    my $result;
+    my $url="https://creativecommons.tankerkoenig.de/json/prices.php?ids=12121212-1212-1212-1212-121212121212&apikey=".$apiKey; 
+    
+    my $param= {
+    url      => $url,
+    timeout  => 1,
+    method   => "GET",
+    header   => "User-Agent: fhem\r\nAccept: application/json",
+    };
+    
+    my ($err, $data)=HttpUtils_BlockingGet($param);
+
+    if ($err){
+        Log3($hash,2,"$hash->{NAME}: Error verifying APIKey: $err");
+        return undef;
+    }else{
+        eval {
+            $result = JSON->new->utf8(1)->decode($data);
+        };
+        if ($@) {
+            Log3 ($hash, 4, "$hash->{NAME}: error decoding response $@");
+        } else {
+            if ($result->{ok} ne "true"){
+                Log3 ($hash, 2, "$hash->{name}: error: $result-{message}");
+                return undef;
+            }
+        }
+        $hash->{helper}->{apiKey}=$apiKey;
+    }
+    if(AttrVal($hash->{NAME}, "IDs","")){
+        #
+        # if IDs attribute is defined, populate list of stations at startup
+        #
+        my $ret=Spritpreis_Tankerkoenig_populateStationsFromAttr($hash);
+    }
     return undef;
 }
 
@@ -61,6 +103,49 @@ Spritpreis_Undef(@){
 
 sub
 Spritpreis_Set(@) {
+    my ($hash , $name, $cmd, @args) = @_;
+    return "Unknown command $cmd, choose one of update add delete" if ($cmd eq '?');
+    Log3($hash, 3,"$hash->{NAME}: get $hash->{NAME} $cmd $args[0]");
+
+    if ($cmd eq "update"){
+        if(defined $args[0]){
+            if($args[0] eq "all"){
+                Spritpreis_Tankerkoenig_updateAll($hash);
+            }elsif($args[0] eq "id"){
+                if(defined $args[1]){
+                    Spritpreis_Tankerkoenig_updatePricesForIDs($hash, $args[1]);
+                }else{
+                    Log3($hash, 2,"$hash->{NAME} update id requires an id parameter!");
+                    return "update id requires an id parameter!";
+                }
+            }
+        }else{
+            #
+            # default behaviour if no ID or "all" is given is to update all existing IDs
+            #
+            Spritpreis_Tankerkoenig_updateAll($hash); 
+        }
+    }elsif($cmd eq "add"){
+        if(defined $args[0]){
+            Log3($hash, 4,"$hash->{NAME} add: args[0]=$args[0]");
+            if($args[0] eq "id"){
+                #
+                # add station by providing a single Tankerkoenig ID
+                #
+                if(defined($args[1])){
+                    Spritpreis_Tankerkoenig_GetDetailsForID($hash, $args[1]);
+                }else{
+                    my $ret="add by id requires a station id";
+                    return $ret;
+                }
+            }
+        }else{
+            my $ret="add requires id or (some other method here soon)";
+            return $ret;
+        }
+    }elsif($cmd eq "delete"){
+
+    }
     return undef;
 }
 
@@ -68,7 +153,7 @@ sub
 Spritpreis_Get(@) {
     my ($hash, $name, $cmd, @args) = @_;
 
-    return "Unknown command $cmd, choose one of search" if ($cmd eq '?');
+    return "Unknown command $cmd, choose one of search test" if ($cmd eq '?');
     Log3($hash, 3,"$hash->{NAME}: get $hash->{NAME} $cmd $args[0]");
 
     if ($cmd eq "search"){
@@ -86,7 +171,13 @@ Spritpreis_Get(@) {
             my $ret=Spritpreis_GetStationIDsForLocation($hash, @loc);
             return $ret;
         }
-    }
+    }elsif($cmd eq "test"){
+            my $ret=Spritpreis_Tankerkoenig_populateStationsFromAttr($hash);
+            return $ret;
+
+    }else{
+        return undef;
+    } 
     #Spritpreis_Tankerkoenig_GetPricesForLocation($hash);
     #Spritpreis_GetCoordinatesForAddress($hash,"Hamburg, Elbphilharmonie");
     # add price trigger here
@@ -144,10 +235,103 @@ Spritpreis_Tankerkoenig_GetIDsForLocation(@){
     return undef;
 }
 
-sub
-Spritpreis_Tankerkoenig_GetPricesForIDs(@){
-    my ($hash) = @_;
+#--------------------------------------------------
+# sub
+# Spritpreis_Tankerkoenig_GetIDs(@){
+#     my ($hash) = @_;
+#     Log3($hash, 4, "$hash->{NAME} called Spritpreis_Tankerkoenig_updatePricesForIDs");
+#     my $IDstring=AttrVal($hash->{NAME}, "IDs","");
+#     Log3($hash,4,"$hash->{NAME}: got ID String $IDstring");
+#     my @IDs=split(",", $IDstring);
+#     my $i=1;
+#     my $j=1;
+#     my $IDList;
+#     do {
+#         $IDList=$IDs[0];
+#         #
+#         # todo hier stimmt was mit den Indizes nicht! 
+#         #
+#         do {
+#             $IDList=$IDList.",".$IDs[$i];
+#         }while($j++ < 9 && defined($IDs[$i++]));
+#         Spritpreis_Tankerkoenig_updatePricesForIDs($hash, $IDList);
+#         Log3($hash, 4,"$hash->{NAME}: Set ending at $i IDList=$IDList");
+#         $j=1;
+#     }while(defined($IDs[$i]));
+#     return undef;
+# }
+#-------------------------------------------------- 
 
+sub
+Spritpreis_Tankerkoenig_populateStationsFromAttr(@){
+    my ($hash) =@_;
+    Log3($hash,4, "$hash->{NAME}: called Spritpreis_Tankerkoenig_populateStationsFromAttr ");
+    my $IDstring=AttrVal($hash->{NAME}, "IDs","");
+    Log3($hash,4,"$hash->{NAME}: got ID String $IDstring");
+    my @IDs=split(",", $IDstring);
+    my $i;
+    do{
+        Spritpreis_Tankerkoenig_GetDetailsForID($hash, $IDs[$i]);
+    }while(defined($IDs[$i++]));
+}
+
+sub
+Spritpreis_Tankerkoenig_updateAll(@){
+    my ($hash) = @_;
+    Log3($hash,4, "$hash->{NAME}: called Spritpreis_Tankerkoenig_updateAll ");
+    my $i=1;
+    my $j=0;
+    my $id;
+    my $IDList;
+    do {
+        $IDList=ReadingsVal($hash->{NAME}, $j."_id", "");
+        while($j++<9 && ReadingsVal($hash->{NAME}, $i."_id", "") ne "" ){
+            Log3($hash, 5, "$hash->{NAME}: i: $i, j: $j, id: ".ReadingsVal($hash->{NAME}, $i."_id", "") );
+            $IDList=$IDList.",".ReadingsVal($hash->{NAME}, $i."_id", "");
+            $i++;
+        }
+        Spritpreis_Tankerkoenig_updatePricesForIDs($hash, $IDList);
+        Log3($hash, 4,"$hash->{NAME}(update all): Set ending at $i IDList=$IDList");
+        $j=1;
+    }while(ReadingsVal($hash->{NAME}, $i."_id", "") ne "" );
+    return undef;
+}
+
+sub
+Spritpreis_Tankerkoenig_GetDetailsForID(@){
+    my ($hash, $id)=@_;
+    my $apiKey=$hash->{helper}->{apiKey};
+    my $url="https://creativecommons.tankerkoenig.de/json/detail.php?id=".$id."&apikey=$apiKey";
+    Log3($hash, 4,"$hash->{NAME}: called $url");
+    my $param={
+        url     =>  $url,
+        hash    =>  $hash,
+        timeout =>  10,
+        method  =>  "GET",
+        header  =>  "User-Agent: fhem\r\nAccept: application/json",
+        parser  =>  \&Spritpreis_Tankerkoenig_ParseDetailsForID,
+        callback=>  \&Spritpreis_callback
+    };
+    HttpUtils_NonblockingGet($param);
+    return undef;
+}
+
+sub
+Spritpreis_Tankerkoenig_updatePricesForIDs(@){
+    my ($hash, $IDList) = @_;
+    my $apiKey=$hash->{helper}->{apiKey};
+    my $url="https://creativecommons.tankerkoenig.de/json/prices.php?ids=".$IDList."&apikey=$apiKey";
+    Log3($hash, 4,"$hash->{NAME}: called $url");
+    my $param={
+        url     =>  $url,
+        hash    =>  $hash,
+        timeout =>  10,
+        method  =>  "GET",
+        header  =>  "User-Agent: fhem\r\nAccept: application/json",
+        parser  =>  \&Spritpreis_Tankerkoenig_ParsePricesForIDs,
+        callback=>  \&Spritpreis_callback
+    };
+    HttpUtils_NonblockingGet($param);
     return undef;
 }
 
@@ -195,22 +379,27 @@ Spritpreis_GetStationIDsForLocation(@){
         if ($@) {
             Log3 ($hash, 4, "$hash->{NAME}: error decoding response $@");
         } else {
+            my @headerHost = grep /Host/, @FW_httpheader;
+            $headerHost[0] =~ s/Host: //g;
+
             my ($stations) = $result->{stations};
-			my @headerHost = grep /Host/, @FW_httpheader;
-            $headerHost[0] =~ s/Host: //g; 
-			my $hashname = $hash->{NAME};
-            my $ret="<html><table><tr><td colspan=2><h3>Stations for Address</h3></p><p><h2>$formattedAddress</h2></p></td></tr>";
+            my $ret="<html><p><h3>Stations for Address</h3></p><p><h2>$formattedAddress</h2></p><table><tr><td>Name</td><td>Ort</td><td>Straße</td></tr>";
             foreach (@{$stations}){
                 (my $station)=$_;
 
                 Log3($hash, 2, "Name: $station->{name}, id: $station->{id}");
-				
-				$ret.= "<tr><td>".$station->{name}." ".$station->{place}." ".$station->{street}." ".$station->{houseNumber}."</td>";
-                $ret.= "<td><a href='#' onclick=\$.get(\"http://".$headerHost[0]."/fhem?cmd=";
-				$ret.= "{my%20\$tmp=(AttrVal('".$hash->{NAME}."','station','')eq'')?'':AttrVal('".$hash->{NAME}."','station','').',';;fhem('attr%20".$hashname."%20station%20'.\$tmp.'".$station->{id}."');;}";
-				$ret.= "\");\$(this).html('added');\$(this).removeAttr('onclick')>add</a></td></tr>";
+                $ret=$ret . "<tr><td><a href=http://" . 
+                            $headerHost[0] . 
+                            "/fhem?cmd=set+" . 
+                            $hash->{NAME} . 
+                            "+add+station+" . 
+                            $station->{id} . 
+                            ">";
+                $ret=$ret . $station->{name} . "</td><td>" . $station->{place} . "</td><td>" . $station->{street} . " " . $station->{houseNumber} . "</td></tr>";
+                #$ret=$ret."<option value=".$station->{id}.">".$station->{name}." ".$station->{place}." ".$station->{street}." ".$station->{houseNumber}."</option>";
             }
-            $ret=$ret."</table></html>";
+            $ret=$ret . "</table>";
+            #$ret=$ret."<button type='submit'>submit</button></form></html>";
             Log3($hash,2,"$hash->{NAME}: ############# ret: $ret");
             return $ret;
         }         
@@ -218,7 +407,7 @@ Spritpreis_GetStationIDsForLocation(@){
         Log3 ($hash, 4, "$hash->{NAME}: something's very odd");
     }
     return $data; 
- InternalTimer(gettimeofday()+AttrVal($hash->{NAME}, "interval",15)*60, "Spritpreis_Tankerkoenig_GetPricesForLocation",$hash);
+    # InternalTimer(gettimeofday()+AttrVal($hash->{NAME}, "interval",15)*60, "Spritpreis_Tankerkoenig_GetPricesForLocation",$hash);
     return undef;
 }
 
@@ -248,6 +437,98 @@ Spritpreis_callback(@) {
 
 sub 
 Spritpreis_ParseIDsForLocation(@){
+    return undef;
+}
+
+sub
+Spritpreis_Tankerkoenig_ParseDetailsForID(@){
+    my ($hash, $err, $data)=@_;
+    my $result;
+
+    if($err){
+        Log3($hash, 4, "$hash->{NAME}: error fetching nformation");
+    } elsif($data){
+        Log3($hash, 4, "$hash->{NAME}: got StationDetail reply");
+        Log3($hash, 5, "$hash->{NAME}: got data $data\n\n\n");
+
+        eval {
+            $result = JSON->new->utf8(1)->decode($data);
+        };
+        if ($@) {
+            Log3 ($hash, 4, "$hash->{NAME}: error decoding response $@");
+        } else {
+            my $i=0;
+            my $station = $result->{station};
+            while(ReadingsVal($hash->{NAME},$i."_id",$station->{id}) ne $station->{id}) 
+            {
+                $i++;
+            }
+            readingsBeginUpdate($hash);
+
+            readingsBulkUpdate($hash,$i."_name",$station->{name});
+            readingsBulkUpdate($hash,$i."_price",$station->{price}) if(defined($station->{price}));
+            readingsBulkUpdate($hash,$i."_price_e5",$station->{e5}) if(defined($station->{e5}));
+            readingsBulkUpdate($hash,$i."_price_e10",$station->{e10}) if(defined($station->{e10}));
+            readingsBulkUpdate($hash,$i."_price_diesel",$station->{diesel}) if(defined($station->{diesel}));
+            readingsBulkUpdate($hash,$i."_place",$station->{place});
+            readingsBulkUpdate($hash,$i."_street",$station->{street}." ".$station->{houseNumber});
+            readingsBulkUpdate($hash,$i."_distance",$station->{dist});
+            readingsBulkUpdate($hash,$i."_brand",$station->{brand});
+            readingsBulkUpdate($hash,$i."_lat",$station->{lat});
+            readingsBulkUpdate($hash,$i."_lon",$station->{lng});
+            readingsBulkUpdate($hash,$i."_id",$station->{id});
+            readingsBulkUpdate($hash,$i."_isOpen",$station->{isOpen});
+          
+            readingsEndUpdate($hash,1);
+        } 
+    }
+}
+
+sub
+Spritpreis_Tankerkoenig_ParsePricesForIDs(@){
+    my ($hash, $err, $data)=@_;
+    my $result;
+
+     if($err){
+        Log3($hash, 4, "$hash->{NAME}: error fetching nformation");
+    } elsif($data){
+        Log3($hash, 4, "$hash->{NAME}: got PricesForLocation reply");
+        Log3($hash, 5, "$hash->{NAME}: got data $data\n\n\n");
+
+        eval {
+            $result = JSON->new->utf8(1)->decode($data);
+        };
+        if ($@) {
+            Log3 ($hash, 4, "$hash->{NAME}: error decoding response $@");
+        } else {
+            my ($stations) = $result->{prices};
+            Log3($hash, 5, "$hash->{NAME}: stations:".Dumper($stations));
+            #
+            # the return value is keyed by stations, therefore, I'll have 
+            # to fetch the stations from the existing readings and run 
+            # through it along those ids.
+            #
+            my $i=0;
+            while(ReadingsVal($hash->{NAME}, $i."_id", "") ne "" ){
+                my $id=ReadingsVal($hash->{NAME}, $i."_id", ""); 
+                Log3($hash, 4, "$hash->{NAME}: checking $id");
+                if(defined($stations->{$id})){
+                    Log3($hash, 4, "$hash->{NAME}: updating $i" );
+                    Log3($hash, 5, "$hash->{NAME} Update set:\nprice: $stations->{$id}->{price}\ne5: $stations->{$id}->{e5}\ne10: $stations->{$id}->{e10}\ndiesel: $stations->{$id}->{diesel}\n");
+                    readingsBeginUpdate($hash);
+
+                    readingsBulkUpdate($hash,$i."_price",$stations->{$id}->{price});
+                    readingsBulkUpdate($hash,$i."_price_e5",$stations->{$id}->{e5});
+                    readingsBulkUpdate($hash,$i."_price_e10",$stations->{$id}->{e10});
+                    readingsBulkUpdate($hash,$i."_price_diesel",$stations->{$id}->{diesel});
+                    readingsBulkUpdate($hash,$i."_isOpen",$stations->{$id}->{status});
+                    
+                    readingsEndUpdate($hash, 1);
+                }
+                $i++;
+            }
+        }
+    }
     return undef;
 }
 
@@ -298,7 +579,7 @@ Spritpreis_ParseStationIDsForLocation(@){
                 # readingsBulkUpdate($hash,$number."_isOpen",$station->{isOpen});
             }
             # readingsEndUpdate($hash,1);
-            $ret=$ret."<input type='submit'></form></html>";
+            $ret=$ret."<button type='submit'>submit</button></html>";
             Log3($hash,2,"$hash->{NAME}: ############# ret: $ret");
             return $ret;
         }         

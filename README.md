@@ -20,6 +20,8 @@ General architecture:
 There are several providers of fuel price services in various countries. This module should provide "branded" subs for those providers (like Spritpreis_Tankerkoenig_getPricesForLocation(@) etc). The module itself would be configured with 
 define Benzinpreis Spritpreis <provider> <additional provider relevant parameters>
 
+[ ] the Tankerkönig configurator spits out a pretty useful bit of json, it would be great to just use that to get the IDs
+
 
 ### Links
 
