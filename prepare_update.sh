@@ -1,5 +1,5 @@
 #!/bin/bash   
-rm controls_ledcontroller.txt
+rm controls_spritpreis.txt
 find ./FHEM -type f \( ! -iname ".*" \) -print0 | while IFS= read -r -d '' f; 
   do
    echo "DEL ${f}" >> controls_spritpreis.txt
@@ -8,7 +8,7 @@ find ./FHEM -type f \( ! -iname ".*" \) -print0 | while IFS= read -r -d '' f;
 done
 
 # CHANGED file
-echo "LedController last change:" > CHANGED
+echo "Spritpreis last change:" > CHANGED
 echo $(date +"%Y-%m-%d") >> CHANGED
 echo " - $(git log -1 --pretty=%B)" >> CHANGED
 

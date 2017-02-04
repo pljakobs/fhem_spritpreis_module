@@ -93,6 +93,10 @@ Spritpreis_Define($$) {
         #
         my $ret=Spritpreis_Tankerkoenig_populateStationsFromAttr($hash);
     }
+    #
+    # start initial update
+    #
+    Spritpreis_Tankerkoenig_updateAll($hash);
     return undef;
 }
 
@@ -144,7 +148,9 @@ Spritpreis_Set(@) {
             return $ret;
         }
     }elsif($cmd eq "delete"){
-
+        # 
+        # not sure how to "remove" readings through the fhem api
+        #
     }
     return undef;
 }
@@ -186,6 +192,12 @@ Spritpreis_Get(@) {
 
 sub
 Spritpreis_Attr(@) {
+    my ($cmd, $device, $attrName, $attrVal)=@_;
+    my $hash = $defs{$device};
+
+    if ($cmd eq 'set' and $attrName eq 'interval'){
+        Spritpreis_Tankerkoenig_updateAll($hash);
+    }
     return undef;
 }
 
@@ -264,6 +276,10 @@ Spritpreis_Tankerkoenig_GetIDsForLocation(@){
 
 sub
 Spritpreis_Tankerkoenig_populateStationsFromAttr(@){
+    #
+    # This walks through the IDs Attribute and adds the stations listed there to the station readings list,
+    # initially getting full details
+    #
     my ($hash) =@_;
     Log3($hash,4, "$hash->{NAME}: called Spritpreis_Tankerkoenig_populateStationsFromAttr ");
     my $IDstring=AttrVal($hash->{NAME}, "IDs","");
@@ -277,6 +293,10 @@ Spritpreis_Tankerkoenig_populateStationsFromAttr(@){
 
 sub
 Spritpreis_Tankerkoenig_updateAll(@){
+    #
+    # this walks through the list of ID Readings and updates the fuel prices for those stations
+    # it does this in blocks of 10 as suggested by the Tankerkoenig API
+    #
     my ($hash) = @_;
     Log3($hash,4, "$hash->{NAME}: called Spritpreis_Tankerkoenig_updateAll ");
     my $i=1;
@@ -294,11 +314,19 @@ Spritpreis_Tankerkoenig_updateAll(@){
         Log3($hash, 4,"$hash->{NAME}(update all): Set ending at $i IDList=$IDList");
         $j=1;
     }while(ReadingsVal($hash->{NAME}, $i."_id", "") ne "" );
+    if(AttrVal($hash->{NAME},"interval",0)!=0){
+        InternalTimer(gettimeofday()+AttrVal($hash->{NAME}, "interval",15)*60, "Spritpreis_Tankerkoenig_updateAll",$hash);
+    }
     return undef;
 }
 
 sub
 Spritpreis_Tankerkoenig_GetDetailsForID(@){
+    # 
+    # This queries the Tankerkoenig API for the details for a specific ID
+    # It does not verify the provided ID
+    # The parser function is responsible for handling the response
+    #
     my ($hash, $id)=@_;
     my $apiKey=$hash->{helper}->{apiKey};
     my $url="https://creativecommons.tankerkoenig.de/json/detail.php?id=".$id."&apikey=$apiKey";
@@ -318,6 +346,11 @@ Spritpreis_Tankerkoenig_GetDetailsForID(@){
 
 sub
 Spritpreis_Tankerkoenig_updatePricesForIDs(@){
+    # 
+    # This queries the Tankerkoenig API for an update on all prices. It takes a list of up to 10 IDs.
+    # It will not verify the validity of those IDs nor will it check that the number is 10 or less
+    # The parser function is responsible for handling the response
+    #
     my ($hash, $IDList) = @_;
     my $apiKey=$hash->{helper}->{apiKey};
     my $url="https://creativecommons.tankerkoenig.de/json/prices.php?ids=".$IDList."&apikey=$apiKey";
@@ -337,6 +370,11 @@ Spritpreis_Tankerkoenig_updatePricesForIDs(@){
 
 sub
 Spritpreis_GetStationIDsForLocation(@){
+   #
+   # This is currently not being used. The idea is to provide a lat/long location and a radius and have
+   # the stations within this radius are presented as a list and, upon selecting them, will be added
+   # to the readings list
+   #
    my ($hash,@location) = @_;
 
    # my $lat=AttrVal($hash->{'NAME'}, "lat",0);
@@ -419,20 +457,28 @@ Spritpreis_GetStationIDsForLocation(@){
 
 sub
 Spritpreis_callback(@) {
-     my ($param, $err, $data) = @_;
-     my ($hash) = $param->{hash};
+    #
+    # the generalized callback function. This should check all the general API errors and 
+    # handle them centrally, leaving the parser functions to handle response specific errors
+    #
+    my ($param, $err, $data) = @_;
+    my ($hash) = $param->{hash};
  
-     # TODO generic error handling
-     #Log3($hash, 5, "$hash->{NAME}: received callback with $data");
-     # do the result-parser callback
-     my $parser = $param->{parser};
-     #Log3($hash, 4, "$hash->{NAME}: calling parser $parser with err $err and data $data");
-     &$parser($hash, $err, $data);
- 
-     if( $err || $err ne ""){
-         Log3 ($hash, 3, "$hash->{NAME} Readings NOT updated, received Error: ".$err);
-     }
-   return undef;
+    # TODO generic error handling
+    #Log3($hash, 5, "$hash->{NAME}: received callback with $data");
+    # do the result-parser callback
+    if ($err){
+        Log3($hash, 4, "$hash->{NAME}: error fetching information: $err");
+        return undef;
+    }
+    my $parser = $param->{parser};
+    #Log3($hash, 4, "$hash->{NAME}: calling parser $parser with err $err and data $data");
+    &$parser($hash, $err, $data);
+
+    if( $err || $err ne ""){
+        Log3 ($hash, 3, "$hash->{NAME} Readings NOT updated, received Error: ".$err);
+    }
+  return undef;
  }
 
 sub 
@@ -442,18 +488,21 @@ Spritpreis_ParseIDsForLocation(@){
 
 sub
 Spritpreis_Tankerkoenig_ParseDetailsForID(@){
+    #
+    # this parses the response generated by the query Spritpreis_Tankerkoenig_GetDetailsForID
+    # The response will contain the ID for a single station being, so no need to go through
+    # multiple parts here. It will work whether or not that ID is currently already in the list
+    # of readings. If it is, the details will be updated, if it is not, the new station will be 
+    # added at the end of the list
+    #
     my ($hash, $err, $data)=@_;
     my $result;
 
-    if($err){
-        Log3($hash, 4, "$hash->{NAME}: error fetching nformation");
-    } elsif($data){
+    if($data){
         Log3($hash, 4, "$hash->{NAME}: got StationDetail reply");
         Log3($hash, 5, "$hash->{NAME}: got data $data\n\n\n");
 
-        eval {
-            $result = JSON->new->utf8(1)->decode($data);
-        };
+        eval { $result = JSON->new->utf8(1)->decode($data); };
         if ($@) {
             Log3 ($hash, 4, "$hash->{NAME}: error decoding response $@");
         } else {
@@ -461,6 +510,11 @@ Spritpreis_Tankerkoenig_ParseDetailsForID(@){
             my $station = $result->{station};
             while(ReadingsVal($hash->{NAME},$i."_id",$station->{id}) ne $station->{id}) 
             {
+                #
+                # this loop iterates through the readings until either an id is equal to the current
+                # response $station->{id} or, if no id is, it will come up with the default which is set 
+                # to $station->{id}, thus it will be added
+                #
                 $i++;
             }
             readingsBeginUpdate($hash);
@@ -486,6 +540,14 @@ Spritpreis_Tankerkoenig_ParseDetailsForID(@){
 
 sub
 Spritpreis_Tankerkoenig_ParsePricesForIDs(@){
+    #
+    # This parses the response to Spritpreis_Tankerkoenig_updatePricesForIDs 
+    # this response contains price updates for the requested stations listed by ID
+    # since we don't keep a context between the API request and the response, 
+    # in order to update the correct readings, this routine has to go through the
+    # readings list and make sure it does find matching IDs. It will not add new
+    # stations to the list
+    #
     my ($hash, $err, $data)=@_;
     my $result;
 
