@@ -224,7 +224,7 @@ Spritpreis_Tankerkoenig_GetIDsForLocation(@){
     my $lng=AttrVal($hash->{'NAME'}, "lon",0);
     my $rad=AttrVal($hash->{'NAME'}, "rad",5);
     my $type=AttrVal($hash->{'NAME'}, "type","diesel");
-    my $sort=AttrVal($hash->{'NAME'}, "sortby","price");
+    # my $sort=AttrVal($hash->{'NAME'}, "sortby","dist"); 
     my $apikey=AttrVal($hash->{'NAME'}, "apikey","");
 
     if($apikey eq "") {
@@ -232,7 +232,7 @@ Spritpreis_Tankerkoenig_GetIDsForLocation(@){
         return "err no APIKEY";
     }
 
-    my $url="https://creativecommons.tankerkoenig.de/json/list.php?lat=$lat&lng=$lng&rad=$rad&type=$type&sort=$sort&apikey=$apikey"; 
+    my $url="https://creativecommons.tankerkoenig.de/json/list.php?lat=$lat&lng=$lng&rad=$rad&type=$type&apikey=$apikey"; 
     my $param = {
         url      => $url,
         timeout  => 2,
@@ -310,10 +310,13 @@ Spritpreis_Tankerkoenig_updateAll(@){
             $IDList=$IDList.",".ReadingsVal($hash->{NAME}, $i."_id", "");
             $i++;
         }
-        Spritpreis_Tankerkoenig_updatePricesForIDs($hash, $IDList);
-        Log3($hash, 4,"$hash->{NAME}(update all): Set ending at $i IDList=$IDList");
+        if($IDList ne ""){
+            Spritpreis_Tankerkoenig_updatePricesForIDs($hash, $IDList);
+            Log3($hash, 4,"$hash->{NAME}(update all): Set ending at $i IDList=$IDList");
+        }
         $j=1;
     }while(ReadingsVal($hash->{NAME}, $i."_id", "") ne "" );
+    Log3($hash, 4, "$hash->{NAME}: updateAll set timer for ".(gettimeofday()+AttrVal($hash->{NAME},"interval",15)*60)." delay ".(AttrVal($hash->{NAME},"interval", 15)*60));
     InternalTimer(gettimeofday()+AttrVal($hash->{NAME}, "interval",15)*60, "Spritpreis_Tankerkoenig_updateAll",$hash);
     return undef;
 }
@@ -327,6 +330,10 @@ Spritpreis_Tankerkoenig_GetDetailsForID(@){
     #
     my ($hash, $id)=@_;
     my $apiKey=$hash->{helper}->{apiKey};
+    if($apiKey eq "") {
+        Log3($hash,3,"$hash->{'NAME'}: please provide a valid apikey, you can get it from https://creativecommons.tankerkoenig.de/#register. This function can't work without it"); 
+        return "err no APIKEY";
+    }
     my $url="https://creativecommons.tankerkoenig.de/json/detail.php?id=".$id."&apikey=$apiKey";
     Log3($hash, 4,"$hash->{NAME}: called $url");
     my $param={
@@ -379,7 +386,7 @@ Spritpreis_GetStationIDsForLocation(@){
    # my $lng=AttrVal($hash->{'NAME'}, "lon",0);
    my $rad=AttrVal($hash->{'NAME'}, "rad",5);
    my $type=AttrVal($hash->{'NAME'}, "type","all");
-   my $sort=AttrVal($hash->{'NAME'}, "sortby","price");
+   # my $sort=AttrVal($hash->{'NAME'}, "sortby","price"); 
    my $apikey=AttrVal($hash->{'NAME'}, "apikey","");
 
    my ($lat, $lng, $formattedAddress)=@location;
@@ -390,7 +397,7 @@ Spritpreis_GetStationIDsForLocation(@){
        Log3($hash,3,"$hash->{'NAME'}: please provide a valid apikey, you can get it from https://creativecommons.tankerkoenig.de/#register. This function can't work without it"); 
        return "err no APIKEY";
    }
-   my $url="https://creativecommons.tankerkoenig.de/json/list.php?lat=$lat&lng=$lng&rad=$rad&type=$type&sort=$sort&apikey=$apikey"; 
+   my $url="https://creativecommons.tankerkoenig.de/json/list.php?lat=$lat&lng=$lng&rad=$rad&type=$type&apikey=$apikey"; 
 
    Log3($hash, 4,"$hash->{NAME}: sending request with url $url");
    
@@ -516,10 +523,25 @@ Spritpreis_Tankerkoenig_ParseDetailsForID(@){
             readingsBeginUpdate($hash);
 
             readingsBulkUpdate($hash,$i."_name",$station->{name});
-            readingsBulkUpdate($hash,$i."_price",$station->{price}) if(defined($station->{price}));
-            readingsBulkUpdate($hash,$i."_price_e5",$station->{e5}) if(defined($station->{e5}));
-            readingsBulkUpdate($hash,$i."_price_e10",$station->{e10}) if(defined($station->{e10}));
-            readingsBulkUpdate($hash,$i."_price_diesel",$station->{diesel}) if(defined($station->{diesel}));
+            my @types=("e5", "e10", "diesel");
+            foreach my $type (@types){
+                Log3($hash,4,"$hash->{NAME}: checking type $type");
+                if(defined($station->{$type})){
+                    if(ReadingsVal($hash->{NAME}, $i."_".$type."_trend",0)!=0){
+                        my $p=ReadingsVal($hash->{NAME}, $i."_".$type."_price",0);
+                        Log3($hash,4,"$hash->{NAME}:parseDetailsForID $type price old: $p");
+                        if($p>$station->{$type}){
+                            readingsBulkUpdate($hash,$i."_".$type."_trend","fällt");
+                            Log3($hash,4,"$hash->{NAME}:parseDetailsForID trend: fällt"); 
+                        }elsif($p < $station->{$type}){
+                            readingsBulkUpdate($hash,$i."_".$type."_trend","steigt");
+                            Log3($hash,4,"$hash->{NAME}:parseDetailsForID trend: konstant"); 
+                        }else{
+                        }
+                        readingsBulkUpdate($hash,$i."_".$type."_price",$station->{$type})
+                    }
+                }
+            }
             readingsBulkUpdate($hash,$i."_place",$station->{place});
             readingsBulkUpdate($hash,$i."_street",$station->{street}." ".$station->{houseNumber});
             readingsBulkUpdate($hash,$i."_distance",$station->{dist});
@@ -548,7 +570,7 @@ Spritpreis_Tankerkoenig_ParsePricesForIDs(@){
     my $result;
 
      if($err){
-        Log3($hash, 4, "$hash->{NAME}: error fetching nformation");
+        Log3($hash, 4, "$hash->{NAME}: error fetching information");
     } elsif($data){
         Log3($hash, 4, "$hash->{NAME}: got PricesForLocation reply");
         Log3($hash, 5, "$hash->{NAME}: got data $data\n\n\n");
@@ -569,16 +591,31 @@ Spritpreis_Tankerkoenig_ParsePricesForIDs(@){
             my $i=0;
             while(ReadingsVal($hash->{NAME}, $i."_id", "") ne "" ){
                 my $id=ReadingsVal($hash->{NAME}, $i."_id", ""); 
-                Log3($hash, 4, "$hash->{NAME}: checking $id");
+                Log3($hash, 4, "$hash->{NAME}: checking ID $id");
                 if(defined($stations->{$id})){
-                    Log3($hash, 4, "$hash->{NAME}: updating $i" );
+                    Log3($hash, 4, "$hash->{NAME}: updating readings-set $i (ID $id)" );
                     Log3($hash, 5, "$hash->{NAME} Update set:\nprice: $stations->{$id}->{price}\ne5: $stations->{$id}->{e5}\ne10: $stations->{$id}->{e10}\ndiesel: $stations->{$id}->{diesel}\n");
                     readingsBeginUpdate($hash);
+                    my @types=("e5", "e10", "diesel");
+                    foreach my $type (@types){
+                        Log3($hash, 4, "$hash->{NAME} ParsePricesForIDs checking type $type");
+                        if(defined($stations->{$id}->{$type})){
+                            Log3($hash, 4, "$hash->{NAME} ParsePricesForIDs updating type $type");
+                            #if(ReadingsVal($hash->{NAME}, $i."_".$type."_trend","") ne ""){
+                                my $p=ReadingsVal($hash->{NAME}, $i."_".$type."_price",0);
+                                Log3($hash,4,"$hash->{NAME}:parseDetailsForID $type price old: $p");
+                                if($p>$stations->{$id}->{$type}){
+                                    readingsBulkUpdate($hash,$i."_".$type."_trend","fällt");
+                                }elsif($p < $stations->{$id}->{$type}){
+                                    readingsBulkUpdate($hash,$i."_".$type."_trend","seigt");
+                                }else{
+                                }
+                                #}
+                            readingsBulkUpdate($hash,$i."_".$type."_price",$stations->{$id}->{$type})
+                        }
+                    }
 
-                    readingsBulkUpdate($hash,$i."_price",$stations->{$id}->{price});
-                    readingsBulkUpdate($hash,$i."_price_e5",$stations->{$id}->{e5});
-                    readingsBulkUpdate($hash,$i."_price_e10",$stations->{$id}->{e10});
-                    readingsBulkUpdate($hash,$i."_price_diesel",$stations->{$id}->{diesel});
+
                     readingsBulkUpdate($hash,$i."_isOpen",$stations->{$id}->{status});
                     
                     readingsEndUpdate($hash, 1);
@@ -598,7 +635,7 @@ Spritpreis_ParseStationIDsForLocation(@){
     Log3($hash,5,"$hash->{NAME}: ParsePricesForLocation has been called with err $err and data $data");
 
     if($err){
-        Log3($hash, 4, "$hash->{NAME}: error fetching nformation");
+        Log3($hash, 4, "$hash->{NAME}: error fetching information");
     } elsif($data){
         Log3($hash, 4, "$hash->{NAME}: got PricesForLocation reply");
         Log3($hash, 5, "$hash->{NAME}: got data $data\n\n\n");
