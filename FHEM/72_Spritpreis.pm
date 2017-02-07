@@ -2,7 +2,7 @@
 # $Id: 72_Spritpreis.pm 0 2017-01-10 12:00:00Z pjakobs $
 
 # v0.0: inital testing
-#
+# v0.1: basic functionality for pre-configured Tankerkoenig IDs
 
 
 package main;
@@ -314,9 +314,7 @@ Spritpreis_Tankerkoenig_updateAll(@){
         Log3($hash, 4,"$hash->{NAME}(update all): Set ending at $i IDList=$IDList");
         $j=1;
     }while(ReadingsVal($hash->{NAME}, $i."_id", "") ne "" );
-    if(AttrVal($hash->{NAME},"interval",0)!=0){
-        InternalTimer(gettimeofday()+AttrVal($hash->{NAME}, "interval",15)*60, "Spritpreis_Tankerkoenig_updateAll",$hash);
-    }
+    InternalTimer(gettimeofday()+AttrVal($hash->{NAME}, "interval",15)*60, "Spritpreis_Tankerkoenig_updateAll",$hash);
     return undef;
 }
 
@@ -380,7 +378,7 @@ Spritpreis_GetStationIDsForLocation(@){
    # my $lat=AttrVal($hash->{'NAME'}, "lat",0);
    # my $lng=AttrVal($hash->{'NAME'}, "lon",0);
    my $rad=AttrVal($hash->{'NAME'}, "rad",5);
-   my $type=AttrVal($hash->{'NAME'}, "type","diesel");
+   my $type=AttrVal($hash->{'NAME'}, "type","all");
    my $sort=AttrVal($hash->{'NAME'}, "sortby","price");
    my $apikey=AttrVal($hash->{'NAME'}, "apikey","");
 
@@ -430,14 +428,12 @@ Spritpreis_GetStationIDsForLocation(@){
                             $headerHost[0] . 
                             "/fhem?cmd=set+" . 
                             $hash->{NAME} . 
-                            "+add+station+" . 
+                            "+add+id+" . 
                             $station->{id} . 
                             ">";
                 $ret=$ret . $station->{name} . "</td><td>" . $station->{place} . "</td><td>" . $station->{street} . " " . $station->{houseNumber} . "</td></tr>";
-                #$ret=$ret."<option value=".$station->{id}.">".$station->{name}." ".$station->{place}." ".$station->{street}." ".$station->{houseNumber}."</option>";
             }
             $ret=$ret . "</table>";
-            #$ret=$ret."<button type='submit'>submit</button></form></html>";
             Log3($hash,2,"$hash->{NAME}: ############# ret: $ret");
             return $ret;
         }         
