@@ -102,6 +102,8 @@ Spritpreis_Define($$) {
 
 sub
 Spritpreis_Undef(@){
+    my ($hash,$name)=@_;
+    RemoveInternalTimer($hash);
     return undef;
 }
 
@@ -114,6 +116,8 @@ Spritpreis_Set(@) {
     if ($cmd eq "update"){
         if(defined $args[0]){
             if($args[0] eq "all"){
+                # removing the timer so we don't get a flurry of requests
+                RemoveInternalTimer($hash);
                 Spritpreis_Tankerkoenig_updateAll($hash);
             }elsif($args[0] eq "id"){
                 if(defined $args[1]){
@@ -607,7 +611,7 @@ Spritpreis_Tankerkoenig_ParsePricesForIDs(@){
                                 if($p>$stations->{$id}->{$type}){
                                     readingsBulkUpdate($hash,$i."_".$type."_trend","fällt");
                                 }elsif($p < $stations->{$id}->{$type}){
-                                    readingsBulkUpdate($hash,$i."_".$type."_trend","seigt");
+                                    readingsBulkUpdate($hash,$i."_".$type."_trend","steigt");
                                 }else{
                                 }
                                 #}
