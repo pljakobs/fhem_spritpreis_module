@@ -123,8 +123,9 @@ Spritpreis_Set(@) {
                 if(defined $args[1]){
                     Spritpreis_Tankerkoenig_updatePricesForIDs($hash, $args[1]);
                 }else{
-                    Log3($hash, 2,"$hash->{NAME} update id requires an id parameter!");
-                    return "update id requires an id parameter!";
+                    my $r="update id requires an id parameter!";
+                    Log3($hash, 2,"$hash->{NAME} $r");
+                    return $r;
                 }
             }
         }else{
@@ -233,7 +234,8 @@ Spritpreis_Tankerkoenig_GetIDsForLocation(@){
 
     if($apikey eq "") {
         Log3($hash,3,"$hash->{'NAME'}: please provide a valid apikey, you can get it from https://creativecommons.tankerkoenig.de/#register. This function can't work without it"); 
-        return "err no APIKEY";
+        my $r="err no APIKEY";
+        return $r; 
     }
 
     my $url="https://creativecommons.tankerkoenig.de/json/list.php?lat=$lat&lng=$lng&rad=$rad&type=$type&apikey=$apikey"; 
@@ -336,7 +338,8 @@ Spritpreis_Tankerkoenig_GetDetailsForID(@){
     my $apiKey=$hash->{helper}->{apiKey};
     if($apiKey eq "") {
         Log3($hash,3,"$hash->{'NAME'}: please provide a valid apikey, you can get it from https://creativecommons.tankerkoenig.de/#register. This function can't work without it"); 
-        return "err no APIKEY";
+        my $r="err no APIKEY";
+        return $r;
     }
     my $url="https://creativecommons.tankerkoenig.de/json/detail.php?id=".$id."&apikey=$apiKey";
     Log3($hash, 4,"$hash->{NAME}: called $url");
@@ -399,7 +402,8 @@ Spritpreis_GetStationIDsForLocation(@){
 
    if($apikey eq "") {
        Log3($hash,3,"$hash->{'NAME'}: please provide a valid apikey, you can get it from https://creativecommons.tankerkoenig.de/#register. This function can't work without it"); 
-       return "err no APIKEY";
+       my $r="err no APIKEY";
+       return $r;
    }
    my $url="https://creativecommons.tankerkoenig.de/json/list.php?lat=$lat&lng=$lng&rad=$rad&type=$type&apikey=$apikey"; 
 
