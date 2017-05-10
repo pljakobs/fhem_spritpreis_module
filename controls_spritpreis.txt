@@ -1,2 +1,2 @@
 DEL ./FHEM/72_Spritpreis.pm
-UPD 2017-02-08_13:40:43 28480 FHEM/72_Spritpreis.pm
+UPD 2017-03-05_10:57:28 29887 FHEM/72_Spritpreis.pm
