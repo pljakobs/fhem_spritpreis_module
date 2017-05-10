@@ -80,8 +80,8 @@ Spritpreis_Define($$) {
         if ($@) {
             Log3 ($hash, 4, "$hash->{NAME}: error decoding response $@");
         } else {
-            if ($result->{ok} ne "true"){
-                Log3 ($hash, 2, "$hash->{name}: error: $result-{message}");
+            if ($result->{ok} ne "true" && $result->{ok} != 1){
+                Log3 ($hash, 2, "$hash->{NAME}: error: no valid return data");
                 return undef;
             }
         }
