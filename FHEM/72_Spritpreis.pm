@@ -73,7 +73,6 @@ Spritpreis_Define($$) {
                 return undef;
             }
 
-<<<<<<< HEAD
             my $result;
             my $url="https://creativecommons.tankerkoenig.de/json/prices.php?ids=12121212-1212-1212-1212-121212121212&apikey=".$apiKey; 
             
@@ -88,20 +87,6 @@ Spritpreis_Define($$) {
 
             if ($err){
                 Log3($hash,2,"$hash->{NAME}: Error verifying APIKey: $err");
-=======
-    if ($err){
-        Log3($hash,2,"$hash->{NAME}: Error verifying APIKey: $err");
-        return undef;
-    }else{
-        eval {
-            $result = JSON->new->utf8(1)->decode($data);
-        };
-        if ($@) {
-            Log3 ($hash, 4, "$hash->{NAME}: error decoding response $@");
-        } else {
-            if ($result->{ok} ne "true" && $result->{ok} != 1){
-                Log3 ($hash, 2, "$hash->{NAME}: error: no valid return data");
->>>>>>> 4c733b3070513ac57e5e3093f1fc5f4f4e53dc2e
                 return undef;
             }else{
                 eval {
