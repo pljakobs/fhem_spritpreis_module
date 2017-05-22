@@ -96,7 +96,7 @@ Spritpreis_Define($$) {
                     Log3 ($hash, 4, "$hash->{NAME}: error decoding response $@");
                 } else {
                     if ($result->{ok} ne "true"){
-                        Log3 ($hash, 2, "$hash->{name}: error: $result-{message}");
+                        Log3 ($hash, 2, "$hash->{name}: error: $result->{message}");
                         return undef;
                     }
                 }
@@ -254,9 +254,10 @@ Spritpreis_GetDetailsForID(){
 }
 
 sub
-Spritpreis_updateAll(){
+Spritpreis_updateAll(@){
+    my ($hash)=@_;
     if($hash->{helper}->{service} eq "Tankerkoenig"){
-        Spritpreis_Tankerkoening_updateAll();
+        Spritpreis_Tankerkoenig_updateAll();
     }elsif($hash->{helper}->{service} eq "Spritpreisrechner"){
     }
 }
@@ -274,15 +275,16 @@ Spritpreis_Tankerkoenig_GetIDsForLocation(@){
     my $lng=AttrVal($hash->{'NAME'}, "lon",0);
     my $rad=AttrVal($hash->{'NAME'}, "rad",5);
     my $type=AttrVal($hash->{'NAME'}, "type","diesel");
-    my $apikey=AttrVal($hash->{'NAME'}, "apikey","");
+    my $apiKey=$hash->{helper}->{apiKey};
+    Log3($hash,4,"$hash->{'NAME'}: apiKey: $apiKey");
 
-    if($apikey eq "") {
+    if($apiKey eq "") {
         Log3($hash,3,"$hash->{'NAME'}: please provide a valid apikey, you can get it from https://creativecommons.tankerkoenig.de/#register. This function can't work without it"); 
         my $r="err no APIKEY";
         return $r; 
     }
 
-    my $url="https://creativecommons.tankerkoenig.de/json/list.php?lat=$lat&lng=$lng&rad=$rad&type=$type&apikey=$apikey"; 
+    my $url="https://creativecommons.tankerkoenig.de/json/list.php?lat=$lat&lng=$lng&rad=$rad&type=$type&apikey=$apiKey"; 
     my $param = {
         url      => $url,
         timeout  => 2,
@@ -431,7 +433,7 @@ Spritpreis_Spritpreisrechner_updatePricesForLocation(@){
     # is to query for prices by location which will make it difficult to follow the 
     # price trend at any specific station.
     #
-
+    my ($hash)=@_;    
     my $url="http://www.spritpreisrechner.at/espritmap-app/GasStationServlet";
     my $lat=AttrVal($hash->{'NAME'}, "lat",0);
     my $lng=AttrVal($hash->{'NAME'}, "lon",0);
@@ -440,7 +442,7 @@ Spritpreis_Spritpreisrechner_updatePricesForLocation(@){
         url     => $url,
         timeout => 1,
         method  => "POST",
-        header  => "User-Agent: fhem\r\nAccept: application/json"
+        header  => "User-Agent: fhem\r\nAccept: application/json",
         data    => {
             "",
             "DIE",
@@ -449,7 +451,7 @@ Spritpreis_Spritpreisrechner_updatePricesForLocation(@){
             "15.489496791403",
             "47.074588294516"
         }
-    }
+    };
     my ($err,$data)=HttpUtils_BlockingGet($param);
     Log3($hash,5,"$hash->{'NAME'}: Dumper($data)");
     return undef;
@@ -469,18 +471,18 @@ Spritpreis_Tankerkoenig_GetStationIDsForLocation(@){
    my $rad=AttrVal($hash->{'NAME'}, "rad",5);
    my $type=AttrVal($hash->{'NAME'}, "type","all");
    # my $sort=AttrVal($hash->{'NAME'}, "sortby","price"); 
-   my $apikey=AttrVal($hash->{'NAME'}, "apikey","");
+   my $apiKey=$hash->{helper}->{apiKey};
 
    my ($lat, $lng, $formattedAddress)=@location;
 
    my $result;
 
-   if($apikey eq "") {
+   if($apiKey eq "") {
        Log3($hash,3,"$hash->{'NAME'}: please provide a valid apikey, you can get it from https://creativecommons.tankerkoenig.de/#register. This function can't work without it"); 
        my $r="err no APIKEY";
        return $r;
    }
-   my $url="https://creativecommons.tankerkoenig.de/json/list.php?lat=$lat&lng=$lng&rad=$rad&type=$type&apikey=$apikey"; 
+   my $url="https://creativecommons.tankerkoenig.de/json/list.php?lat=$lat&lng=$lng&rad=$rad&type=$type&apikey=$apiKey"; 
 
    Log3($hash, 4,"$hash->{NAME}: sending request with url $url");
    
