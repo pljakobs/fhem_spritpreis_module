@@ -39,7 +39,7 @@ Spritpreis_Initialize(@) {
     $hash->{AttrFn}         = 'Spritpreis_Attr';
     $hash->{NotifyFn}       = 'Spritpreis_Notify';
     $hash->{ReadFn}         = 'Spritpreis_Read';
-    $hash->{AttrList}       = "lat lon rad IDs type sortby apikey interval address"." $readingFnAttributes";
+    $hash->{AttrList}       = "lat lon rad IDs type sortby apikey interval address priceformat:2dezCut,2dezRound,3dez"." $readingFnAttributes";
     #$hash->{AttrList}       = "IDs type interval"." $readingFnAttributes";
     return undef;
 }
@@ -612,6 +612,12 @@ Spritpreis_Tankerkoenig_ParseDetailsForID(@){
             foreach my $type (@types){
                 Log3($hash,4,"$hash->{NAME}: checking type $type");
                 if(defined($station->{$type})){
+				
+					if(AttrVal($hash->{NAME}, "priceformat","") eq "2dezCut"){
+						chop($station->{$type});
+					}elsif(AttrVal($hash->{NAME}, "priceformat","") eq "2dezRound"){
+						$station->{$type}=sprintf("%.2f", $station->{$type});
+					}
                     if(ReadingsVal($hash->{NAME}, $i."_".$type."_trend",0)!=0){
                         my $p=ReadingsVal($hash->{NAME}, $i."_".$type."_price",0);
                         Log3($hash,4,"$hash->{NAME}:parseDetailsForID $type price old: $p");
@@ -685,6 +691,12 @@ Spritpreis_Tankerkoenig_ParsePricesForIDs(@){
                     foreach my $type (@types){
                         Log3($hash, 4, "$hash->{NAME} ParsePricesForIDs checking type $type");
                         if(defined($stations->{$id}->{$type})){
+						
+							if(AttrVal($hash->{NAME}, "priceformat","") eq "2dezCut"){
+								chop($stations->{$id}->{$type});
+							}elsif(AttrVal($hash->{NAME}, "priceformat","") eq "2dezRound"){
+								$stations->{$id}->{$type}=sprintf("%.2f", $stations->{$id}->{$type});
+							}
                             Log3($hash, 4, "$hash->{NAME} ParsePricesForIDs updating type $type");
                             #if(ReadingsVal($hash->{NAME}, $i."_".$type."_trend","") ne ""){
                                 my $p=ReadingsVal($hash->{NAME}, $i."_".$type."_price",0);
