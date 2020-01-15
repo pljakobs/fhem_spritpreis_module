@@ -11,7 +11,6 @@ use strict;
 use warnings;
 
 use Time::HiRes;
-use Time::HiRes qw(usleep nanosleep);
 use Time::HiRes qw(time);
 use JSON::XS;
 use URI::URL;
